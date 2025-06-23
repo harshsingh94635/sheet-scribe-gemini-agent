@@ -143,13 +143,19 @@ export class FirecrawlService {
       for (const url of possibleUrls) {
         try {
           console.log(`Testing URL: ${url}`);
+          
+          // Create AbortController for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
           // Use a simple fetch to test if the URL is accessible
           const response = await fetch(url, { 
             method: 'HEAD', 
             mode: 'no-cors',
-            timeout: 5000 
+            signal: controller.signal
           });
           
+          clearTimeout(timeoutId);
           console.log(`URL ${url} appears to be accessible`);
           return url;
         } catch (error) {
