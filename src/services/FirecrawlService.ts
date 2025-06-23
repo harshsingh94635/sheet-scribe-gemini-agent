@@ -86,17 +86,19 @@ export class FirecrawlService {
         };
       }
 
-      // Handle different response structures from Firecrawl API
+      // Handle the response structure correctly
       let content = '';
       let metadata = {};
 
-      if (scrapeResponse.data) {
-        content = scrapeResponse.data.markdown || scrapeResponse.data.content || '';
-        metadata = scrapeResponse.data.metadata || {};
-      } else {
-        // Handle direct response structure
-        content = (scrapeResponse as any).markdown || (scrapeResponse as any).content || '';
-        metadata = (scrapeResponse as any).metadata || {};
+      // The response structure should have markdown and metadata properties directly
+      if (scrapeResponse.markdown) {
+        content = scrapeResponse.markdown;
+      } else if ((scrapeResponse as any).content) {
+        content = (scrapeResponse as any).content;
+      }
+
+      if (scrapeResponse.metadata) {
+        metadata = scrapeResponse.metadata;
       }
 
       if (!content) {
@@ -123,34 +125,65 @@ export class FirecrawlService {
     }
   }
 
-  async searchAndScrapeEntity(entityName: string): Promise<ScrapeResult> {
+  async findEntityWebsite(entityName: string): Promise<string | null> {
     try {
-      console.log(`Searching and scraping for entity: ${entityName}`);
+      console.log(`Finding website for entity: ${entityName}`);
       
       // Try to construct likely URLs for the entity
       const possibleUrls = [
         `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.com`,
         `https://${entityName.toLowerCase().replace(/\s+/g, '')}.com`,
         `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.org`,
-        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.org`
+        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.org`,
+        `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.net`,
+        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.net`
       ];
 
-      // Try scraping each possible URL
+      // Try each possible URL with a simple fetch to see if it exists
       for (const url of possibleUrls) {
         try {
-          const result = await this.scrape(url);
-          if (result.success && result.data?.content) {
-            console.log(`Successfully scraped ${url} for ${entityName}`);
-            return result;
-          }
+          console.log(`Testing URL: ${url}`);
+          // Use a simple fetch to test if the URL is accessible
+          const response = await fetch(url, { 
+            method: 'HEAD', 
+            mode: 'no-cors',
+            timeout: 5000 
+          });
+          
+          console.log(`URL ${url} appears to be accessible`);
+          return url;
         } catch (error) {
-          console.log(`Failed to scrape ${url}, trying next...`);
+          console.log(`URL ${url} is not accessible, trying next...`);
           continue;
         }
       }
 
-      // If direct URLs don't work, try a web search approach
-      // For now, return an error since we couldn't find the entity
+      console.log(`Could not find website for ${entityName}`);
+      return null;
+      
+    } catch (error) {
+      console.error('Error in findEntityWebsite:', error);
+      return null;
+    }
+  }
+
+  async searchAndScrapeEntity(entityName: string): Promise<ScrapeResult> {
+    try {
+      console.log(`Searching and scraping for entity: ${entityName}`);
+      
+      // First try to find the entity's website
+      const websiteUrl = await this.findEntityWebsite(entityName);
+      
+      if (websiteUrl) {
+        console.log(`Found potential website for ${entityName}: ${websiteUrl}`);
+        const result = await this.scrape(websiteUrl);
+        if (result.success && result.data?.content) {
+          console.log(`Successfully scraped ${websiteUrl} for ${entityName}`);
+          return result;
+        }
+      }
+
+      // If direct website approach doesn't work, return an error
       return {
         success: false,
         error: `Could not find or scrape website for ${entityName}`
