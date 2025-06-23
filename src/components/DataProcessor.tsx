@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,9 +12,9 @@ import { FirecrawlService } from '@/services/FirecrawlService';
 
 interface DataProcessorProps {
   data: SpreadsheetRow[];
-  onUpdate: (update: { status: string; progress: number }) => void;
+  onUpdate: (update: { status: 'idle' | 'processing' | 'completed' | 'error'; progress: number }) => void;
   onComplete: (results: SpreadsheetRow[]) => void;
-  status: string;
+  status: 'idle' | 'processing' | 'completed' | 'error';
   progress: number;
 }
 
@@ -76,14 +75,14 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
 
       // Use Gemini to extract structured data
       const geminiService = new GeminiService();
-      const extractedData = await geminiService.extractContactInfo(scrapeResult.data.content, entityName);
+      const extractedData = await geminiService.extractContactInfo(scrapeResult.data?.content || '', entityName);
       
       addLog(`Extracted data for ${entityName}`);
       return extractedData;
       
     } catch (error) {
       console.error('Error in searchAndExtractData:', error);
-      addLog(`Error processing ${entityName}: ${error.message}`);
+      addLog(`Error processing ${entityName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return {};
     }
   };
@@ -142,7 +141,7 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
         
       } catch (error) {
         console.error(`Error processing row ${i + 1}:`, error);
-        addLog(`Error processing row ${i + 1}: ${error.message}`);
+        addLog(`Error processing row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         results.push(row);
       }
     }

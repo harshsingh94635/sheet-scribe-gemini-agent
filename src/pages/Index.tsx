@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { FileUploader } from '@/components/FileUploader';
 import { DataProcessor } from '@/components/DataProcessor';
@@ -42,7 +41,7 @@ const Index = () => {
     setActiveTab('process');
   };
 
-  const handleProcessingUpdate = (update: Partial<ProcessedData>) => {
+  const handleProcessingUpdate = (update: { status: 'idle' | 'processing' | 'completed' | 'error'; progress: number }) => {
     setProcessedData(prev => ({ ...prev, ...update }));
   };
 

@@ -66,7 +66,7 @@ export class FirecrawlService {
       console.error('Firecrawl search error:', error);
       return {
         success: false,
-        error: error.message || 'Search failed'
+        error: error instanceof Error ? error.message : 'Search failed'
       };
     }
   }
@@ -89,11 +89,16 @@ export class FirecrawlService {
         };
       }
 
+      // Handle the correct response structure
+      const responseData = scrapeResponse as any;
+      const content = responseData.markdown || responseData.content || responseData.data?.markdown || responseData.data?.content || '';
+      const metadata = responseData.metadata || responseData.data?.metadata || {};
+
       return {
         success: true,
         data: {
-          content: scrapeResponse.data.markdown || scrapeResponse.data.content || '',
-          metadata: scrapeResponse.data.metadata || {}
+          content,
+          metadata
         }
       };
       
@@ -101,7 +106,7 @@ export class FirecrawlService {
       console.error('Firecrawl scrape error:', error);
       return {
         success: false,
-        error: error.message || 'Scraping failed'
+        error: error instanceof Error ? error.message : 'Scraping failed'
       };
     }
   }
@@ -121,7 +126,7 @@ export class FirecrawlService {
         console.error(`Error scraping ${url}:`, error);
         results.push({
           success: false,
-          error: error.message || 'Scraping failed',
+          error: error instanceof Error ? error.message : 'Scraping failed',
           url
         });
       }
