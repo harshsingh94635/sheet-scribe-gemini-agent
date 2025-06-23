@@ -18,15 +18,17 @@ export class GeminiService {
 
   async extractContactInfo(webContent: string, entityName: string): Promise<Partial<SpreadsheetRow>> {
     try {
+      console.log(`Extracting contact info for ${entityName} from ${webContent.length} characters of content`);
+      
       const prompt = `
 You are a data extraction AI. Extract contact information for "${entityName}" from the following web content.
 
 Web Content:
-${webContent.substring(0, 8000)} // Limit content to avoid token limits
+${webContent.substring(0, 10000)}
 
-Please extract the following information and return it as a JSON object:
+Extract the following information and return it as a JSON object:
 {
-  "contact": "main contact number (phone)",
+  "contact": "main contact phone number",
   "phone": "primary phone number", 
   "email": "official email address",
   "website": "official website URL",
@@ -35,15 +37,16 @@ Please extract the following information and return it as a JSON object:
   "address": "physical address if available"
 }
 
-Rules:
+IMPORTANT RULES:
 1. Only extract information that is clearly associated with "${entityName}"
-2. For phone numbers, prefer main/general contact numbers
-3. For emails, prefer info@, contact@, or general inquiry emails
-4. For location, provide city and country at minimum
-5. If information is not found, use empty string ""
-6. Ensure all URLs are complete and valid
-7. Format phone numbers consistently
-8. Return only the JSON object, no additional text
+2. For phone numbers, look for main/general contact numbers, support numbers, or office numbers
+3. For emails, prefer info@, contact@, hello@, or general inquiry emails
+4. For website, use the main domain URL
+5. For location, provide city and country at minimum
+6. If information is not clearly found, use empty string ""
+7. Ensure all URLs are complete and valid (include https://)
+8. Format phone numbers in international format if possible
+9. Return ONLY the JSON object, no additional text or explanation
 
 JSON:`;
 
@@ -51,11 +54,11 @@ JSON:`;
       const response = await result.response;
       const text = response.text();
       
-      console.log('Gemini response:', text);
+      console.log(`Gemini response for ${entityName}:`, text);
 
-      // Try to parse the JSON response
       try {
-        const jsonMatch = text.match(/\{.*\}/s);
+        // Extract JSON from the response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const extractedData = JSON.parse(jsonMatch[0]);
           
@@ -63,22 +66,25 @@ JSON:`;
           const cleanedData: Partial<SpreadsheetRow> = {};
           
           Object.entries(extractedData).forEach(([key, value]) => {
-            if (typeof value === 'string' && value.trim() !== '') {
+            if (typeof value === 'string' && value.trim() !== '' && value.toLowerCase() !== 'not found') {
               cleanedData[key] = value.trim();
             }
           });
           
+          console.log(`Cleaned extracted data for ${entityName}:`, cleanedData);
           return cleanedData;
+        } else {
+          console.log(`No JSON found in Gemini response for ${entityName}`);
         }
       } catch (parseError) {
-        console.error('Failed to parse Gemini JSON response:', parseError);
+        console.error(`Failed to parse Gemini JSON response for ${entityName}:`, parseError);
       }
       
       return {};
       
     } catch (error) {
-      console.error('Gemini API error:', error);
-      throw new Error(`Failed to extract data: ${error.message}`);
+      console.error(`Gemini API error for ${entityName}:`, error);
+      throw new Error(`Failed to extract data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

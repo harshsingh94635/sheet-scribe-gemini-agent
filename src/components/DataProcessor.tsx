@@ -48,36 +48,35 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
 
   const searchAndExtractData = async (entityName: string): Promise<Partial<SpreadsheetRow>> => {
     try {
-      addLog(`Searching for: ${entityName}`);
+      addLog(`Processing entity: ${entityName}`);
+      console.log(`Starting data extraction for: ${entityName}`);
       
-      // Use Firecrawl to search and scrape
-      const searchQuery = `${entityName} contact email phone website`;
       const firecrawlService = new FirecrawlService();
       
-      // Search for the entity
-      const searchResults = await firecrawlService.search(searchQuery);
+      // Use the new searchAndScrapeEntity method
+      const scrapeResult = await firecrawlService.searchAndScrapeEntity(entityName);
       
-      if (!searchResults.success || !searchResults.data?.length) {
-        addLog(`No search results found for ${entityName}`);
+      if (!scrapeResult.success) {
+        addLog(`Failed to scrape data for ${entityName}: ${scrapeResult.error}`);
+        console.log(`Scraping failed for ${entityName}:`, scrapeResult.error);
         return {};
       }
 
-      // Get the top result and scrape it
-      const topResult = searchResults.data[0];
-      addLog(`Scraping: ${topResult.url}`);
-      
-      const scrapeResult = await firecrawlService.scrape(topResult.url);
-      
-      if (!scrapeResult.success) {
-        addLog(`Failed to scrape ${topResult.url}`);
+      if (!scrapeResult.data?.content) {
+        addLog(`No content found for ${entityName}`);
         return {};
       }
+
+      console.log(`Content extracted for ${entityName}, length: ${scrapeResult.data.content.length}`);
+      addLog(`Content extracted, analyzing with Gemini AI...`);
 
       // Use Gemini to extract structured data
       const geminiService = new GeminiService();
-      const extractedData = await geminiService.extractContactInfo(scrapeResult.data?.content || '', entityName);
+      const extractedData = await geminiService.extractContactInfo(scrapeResult.data.content, entityName);
       
-      addLog(`Extracted data for ${entityName}`);
+      console.log(`Extracted data for ${entityName}:`, extractedData);
+      addLog(`Data extraction completed for ${entityName}`);
+      
       return extractedData;
       
     } catch (error) {
@@ -109,6 +108,7 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
 
     const nameColumn = identifyNameColumn(data);
     addLog(`Using column "${nameColumn}" for entity names`);
+    console.log(`Processing ${data.length} rows, using column: ${nameColumn}`);
 
     const results: SpreadsheetRow[] = [];
 
@@ -129,15 +129,21 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
       }
 
       try {
+        addLog(`Processing row ${i + 1}: ${entityName}`);
         const extractedData = await searchAndExtractData(entityName);
+        
+        // Merge extracted data with original row
         const enrichedRow = { ...row, ...extractedData };
         results.push(enrichedRow);
+        
+        console.log(`Row ${i + 1} processed:`, enrichedRow);
+        addLog(`Row ${i + 1} completed with ${Object.keys(extractedData).length} fields extracted`);
         
         const progressPercent = ((i + 1) / data.length) * 100;
         onUpdate({ status: 'processing', progress: progressPercent });
         
         // Add delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
       } catch (error) {
         console.error(`Error processing row ${i + 1}:`, error);
@@ -146,11 +152,12 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
       }
     }
 
+    console.log('Processing completed, total results:', results.length);
     setProcessedResults(results);
     setIsProcessing(false);
     
     if (!isPaused) {
-      addLog('Processing completed!');
+      addLog(`Processing completed! Processed ${results.length} rows`);
       onComplete(results);
       toast.success('Data processing completed successfully!');
     }
