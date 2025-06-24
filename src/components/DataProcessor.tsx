@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, Square, Bot, Globe, AlertCircle, CheckCircle } from 'lucide-react';
+import { Play, Pause, Square, Bot, Globe, AlertCircle, CheckCircle, Sparkles, Zap, Target } from 'lucide-react';
 import { toast } from 'sonner';
 import { SpreadsheetRow } from '@/pages/Index';
 import { GeminiService } from '@/services/GeminiService';
@@ -24,12 +24,14 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
   const [currentRow, setCurrentRow] = useState(0);
   const [processedResults, setProcessedResults] = useState<SpreadsheetRow[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const [successCount, setSuccessCount] = useState(0);
   const [targetColumns] = useState([
-    'contact', 'phone', 'email', 'website', 'location', 'linkedin', 'address'
+    'contact', 'phone', 'email', 'website', 'location', 'linkedin', 'address', 'twitter', 'facebook'
   ]);
 
   const addLog = (message: string) => {
-    setLogs(prev => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${message}`]);
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev.slice(-4), `${timestamp}: ${message}`]);
   };
 
   const identifyNameColumn = (data: SpreadsheetRow[]): string => {
@@ -48,40 +50,45 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
 
   const searchAndExtractData = async (entityName: string): Promise<Partial<SpreadsheetRow>> => {
     try {
-      addLog(`Processing entity: ${entityName}`);
+      addLog(`🔍 Processing entity: ${entityName}`);
       console.log(`Starting data extraction for: ${entityName}`);
       
       const firecrawlService = new FirecrawlService();
       
-      // Use the new searchAndScrapeEntity method
       const scrapeResult = await firecrawlService.searchAndScrapeEntity(entityName);
       
       if (!scrapeResult.success) {
-        addLog(`Failed to scrape data for ${entityName}: ${scrapeResult.error}`);
+        addLog(`❌ Failed to scrape data for ${entityName}`);
         console.log(`Scraping failed for ${entityName}:`, scrapeResult.error);
         return {};
       }
 
       if (!scrapeResult.data?.content) {
-        addLog(`No content found for ${entityName}`);
+        addLog(`⚠️ No content found for ${entityName}`);
         return {};
       }
 
       console.log(`Content extracted for ${entityName}, length: ${scrapeResult.data.content.length}`);
-      addLog(`Content extracted, analyzing with Gemini AI...`);
+      addLog(`📄 Content extracted, analyzing with Gemini AI...`);
 
-      // Use Gemini to extract structured data
       const geminiService = new GeminiService();
       const extractedData = await geminiService.extractContactInfo(scrapeResult.data.content, entityName);
       
+      const fieldsExtracted = Object.keys(extractedData).length;
+      if (fieldsExtracted > 0) {
+        setSuccessCount(prev => prev + 1);
+        addLog(`✅ Successfully extracted ${fieldsExtracted} fields for ${entityName}`);
+      } else {
+        addLog(`⚠️ No data extracted for ${entityName}`);
+      }
+      
       console.log(`Extracted data for ${entityName}:`, extractedData);
-      addLog(`Data extraction completed for ${entityName}`);
       
       return extractedData;
       
     } catch (error) {
       console.error('Error in searchAndExtractData:', error);
-      addLog(`Error processing ${entityName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      addLog(`💥 Error processing ${entityName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return {};
     }
   };
@@ -92,29 +99,29 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
       return;
     }
 
-    // Check API keys
     const geminiKey = localStorage.getItem('gemini_api_key');
     const firecrawlKey = localStorage.getItem('firecrawl_api_key');
     
     if (!geminiKey || !firecrawlKey) {
-      toast.error('Please configure your API keys first');
+      toast.error('Please configure your API keys first in the API Setup tab');
       return;
     }
 
     setIsProcessing(true);
     setIsPaused(false);
+    setSuccessCount(0);
     onUpdate({ status: 'processing', progress: 0 });
-    addLog('Starting data processing...');
+    addLog('🚀 Starting AI-powered data processing...');
 
     const nameColumn = identifyNameColumn(data);
-    addLog(`Using column "${nameColumn}" for entity names`);
+    addLog(`🎯 Using column "${nameColumn}" for entity names`);
     console.log(`Processing ${data.length} rows, using column: ${nameColumn}`);
 
     const results: SpreadsheetRow[] = [];
 
     for (let i = currentRow; i < data.length; i++) {
       if (isPaused) {
-        addLog('Processing paused');
+        addLog('⏸️ Processing paused by user');
         break;
       }
 
@@ -123,31 +130,28 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
       const entityName = row[nameColumn];
 
       if (!entityName || entityName.trim() === '') {
-        addLog(`Skipping empty row ${i + 1}`);
+        addLog(`⏭️ Skipping empty row ${i + 1}`);
         results.push(row);
         continue;
       }
 
       try {
-        addLog(`Processing row ${i + 1}: ${entityName}`);
+        addLog(`🔄 Processing row ${i + 1}/${data.length}: ${entityName}`);
         const extractedData = await searchAndExtractData(entityName);
         
-        // Merge extracted data with original row
         const enrichedRow = { ...row, ...extractedData };
         results.push(enrichedRow);
         
         console.log(`Row ${i + 1} processed:`, enrichedRow);
-        addLog(`Row ${i + 1} completed with ${Object.keys(extractedData).length} fields extracted`);
         
         const progressPercent = ((i + 1) / data.length) * 100;
         onUpdate({ status: 'processing', progress: progressPercent });
         
-        // Add delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 3000));
         
       } catch (error) {
         console.error(`Error processing row ${i + 1}:`, error);
-        addLog(`Error processing row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        addLog(`💥 Error processing row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         results.push(row);
       }
     }
@@ -157,9 +161,9 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
     setIsProcessing(false);
     
     if (!isPaused) {
-      addLog(`Processing completed! Processed ${results.length} rows`);
+      addLog(`🎉 Processing completed! Enhanced ${results.length} rows with ${successCount} successful extractions`);
       onComplete(results);
-      toast.success('Data processing completed successfully!');
+      toast.success(`🎊 Data processing completed! Successfully enhanced ${successCount} entries.`);
     }
   };
 
@@ -178,7 +182,7 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
   const handlePause = () => {
     setIsPaused(true);
     setIsProcessing(false);
-    addLog('Processing paused by user');
+    addLog('⏸️ Processing paused by user');
   };
 
   const handleStop = () => {
@@ -186,85 +190,130 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
     setIsProcessing(false);
     setCurrentRow(0);
     onUpdate({ status: 'idle', progress: 0 });
-    addLog('Processing stopped by user');
+    addLog('⏹️ Processing stopped by user');
   };
 
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
-        <Bot className="h-12 w-12 text-purple-600 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold mb-2">AI Data Processing</h2>
-        <p className="text-gray-600">Automated web browsing and data extraction in progress</p>
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="p-3 bg-gradient-to-r from-purple-500 to-pink-600 rounded-full shadow-lg animate-pulse">
+            <Bot className="h-8 w-8 text-white" />
+          </div>
+          <Sparkles className="h-6 w-6 text-yellow-500 animate-bounce" />
+          <Zap className="h-6 w-6 text-blue-500 animate-pulse" />
+        </div>
+        <h2 className="text-3xl font-bold mb-2 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          🤖 AI Data Processing Engine
+        </h2>
+        <p className="text-gray-600 text-lg">Advanced web intelligence and data extraction in progress ✨</p>
       </div>
 
-      {/* Processing Overview */}
-      <Card>
+      {/* Enhanced Processing Overview */}
+      <Card className="border-0 shadow-xl bg-gradient-to-br from-purple-50 to-blue-50">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Processing Configuration
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Target className="h-6 w-6 text-purple-600" />
+            🎯 Processing Configuration
           </CardTitle>
-          <CardDescription>
-            {data.length} rows loaded • Target columns: {targetColumns.join(', ')}
+          <CardDescription className="text-lg">
+            📊 {data.length} rows loaded • 🎯 {targetColumns.length} target columns • 🚀 AI-powered extraction
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Target Columns */}
-          <div className="space-y-2">
-            <h4 className="font-medium">Columns to populate:</h4>
-            <div className="flex flex-wrap gap-2">
+        <CardContent className="space-y-6">
+          {/* Enhanced Target Columns */}
+          <div className="space-y-3">
+            <h4 className="font-semibold text-lg flex items-center gap-2">
+              <Globe className="h-5 w-5 text-blue-600" />
+              📋 Information to Extract:
+            </h4>
+            <div className="grid grid-cols-3 gap-2">
               {targetColumns.map(col => (
-                <Badge key={col} variant="secondary">{col}</Badge>
+                <Badge key={col} variant="secondary" className="p-2 text-center bg-gradient-to-r from-blue-100 to-purple-100 hover:from-blue-200 hover:to-purple-200 transition-all duration-200">
+                  {col === 'contact' && '📞'} 
+                  {col === 'phone' && '☎️'} 
+                  {col === 'email' && '📧'} 
+                  {col === 'website' && '🌐'} 
+                  {col === 'location' && '📍'} 
+                  {col === 'linkedin' && '💼'} 
+                  {col === 'address' && '🏢'} 
+                  {col === 'twitter' && '🐦'} 
+                  {col === 'facebook' && '📘'}
+                  {' '}{col}
+                </Badge>
               ))}
             </div>
           </div>
 
-          {/* API Status */}
+          {/* Enhanced API Status */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-2">
-              {localStorage.getItem('gemini_api_key') ? (
-                <CheckCircle className="h-4 w-4 text-green-500" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-red-500" />
-              )}
-              <span className="text-sm">Gemini API</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {localStorage.getItem('firecrawl_api_key') ? (
-                <CheckCircle className="h-4 w-4 text-green-500" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-red-500" />
-              )}
-              <span className="text-sm">Firecrawl API</span>
-            </div>
+            <Card className="p-4 bg-white shadow-sm">
+              <div className="flex items-center gap-3">
+                {localStorage.getItem('gemini_api_key') ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+                <div>
+                  <span className="font-medium">🧠 Gemini AI</span>
+                  <p className="text-xs text-gray-500">Data extraction engine</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4 bg-white shadow-sm">
+              <div className="flex items-center gap-3">
+                {localStorage.getItem('firecrawl_api_key') ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+                <div>
+                  <span className="font-medium">🕷️ Firecrawl</span>
+                  <p className="text-xs text-gray-500">Web scraping service</p>
+                </div>
+              </div>
+            </Card>
           </div>
+
+          {/* Success Statistics */}
+          {isProcessing && (
+            <Card className="p-4 bg-gradient-to-r from-green-50 to-blue-50">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">✅ Successful Extractions</span>
+                <span className="text-2xl font-bold text-green-600">{successCount}</span>
+              </div>
+            </Card>
+          )}
         </CardContent>
       </Card>
 
-      {/* Processing Controls */}
-      <Card>
+      {/* Enhanced Processing Controls */}
+      <Card className="border-0 shadow-lg">
         <CardHeader>
-          <CardTitle>Processing Controls</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-blue-600" />
+            🎮 Processing Controls
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <Button 
               onClick={handleStart} 
               disabled={isProcessing}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
             >
               <Play className="h-4 w-4" />
-              {isPaused ? 'Resume' : 'Start'} Processing
+              {isPaused ? '▶️ Resume Magic' : '🚀 Start AI Processing'}
             </Button>
             
             {isProcessing && (
               <Button 
                 onClick={handlePause} 
                 variant="outline"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-orange-50 border-orange-300"
               >
                 <Pause className="h-4 w-4" />
-                Pause
+                ⏸️ Pause
               </Button>
             )}
             
@@ -275,45 +324,54 @@ export const DataProcessor = ({ data, onUpdate, onComplete, status, progress }: 
               className="flex items-center gap-2"
             >
               <Square className="h-4 w-4" />
-              Stop
+              ⏹️ Stop
             </Button>
           </div>
 
-          {/* Progress */}
+          {/* Enhanced Progress Display */}
           {(isProcessing || isPaused) && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Row {currentRow + 1} of {data.length}</span>
-                <span>{Math.round(progress)}%</span>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm font-medium">
+                <span>🔄 Row {currentRow + 1} of {data.length}</span>
+                <span className="text-blue-600">{Math.round(progress)}% Complete</span>
               </div>
-              <Progress value={progress} className="w-full" />
+              <Progress value={progress} className="w-full h-3 bg-gray-200">
+                <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300" />
+              </Progress>
+              <div className="text-center text-sm text-gray-600">
+                ✅ {successCount} successful extractions so far
+              </div>
             </div>
           )}
 
-          {/* Status */}
+          {/* Enhanced Status */}
           {status !== 'idle' && (
-            <Alert>
-              <Bot className="h-4 w-4" />
-              <AlertDescription>
-                Status: {status === 'processing' ? 'AI is actively processing your data...' : 
-                         status === 'completed' ? 'Processing completed successfully!' : 
-                         'Ready to start processing'}
+            <Alert className="border-blue-200 bg-gradient-to-r from-blue-50 to-purple-50">
+              <Bot className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="font-medium">
+                {status === 'processing' && '🤖 AI is actively processing your data with advanced web intelligence...'}
+                {status === 'completed' && '🎉 Processing completed successfully! Your data has been enriched.'}
+                {status === 'error' && '❌ An error occurred during processing.'}
+                {status === 'idle' && '⚡ Ready to start AI-powered data enhancement'}
               </AlertDescription>
             </Alert>
           )}
         </CardContent>
       </Card>
 
-      {/* Activity Logs */}
+      {/* Enhanced Activity Logs */}
       {logs.length > 0 && (
-        <Card>
+        <Card className="border-0 shadow-lg">
           <CardHeader>
-            <CardTitle>Activity Log</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-green-600" />
+              📊 Live Activity Monitor
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="bg-gray-50 p-4 rounded-lg max-h-40 overflow-y-auto">
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg max-h-48 overflow-y-auto font-mono text-sm">
               {logs.map((log, index) => (
-                <div key={index} className="text-sm font-mono text-gray-700 mb-1">
+                <div key={index} className="mb-1 opacity-80 hover:opacity-100 transition-opacity">
                   {log}
                 </div>
               ))}

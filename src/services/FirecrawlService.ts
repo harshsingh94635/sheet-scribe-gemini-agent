@@ -1,4 +1,3 @@
-
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 interface SearchResult {
@@ -36,18 +35,8 @@ export class FirecrawlService {
     try {
       console.log(`Searching for: ${query}`);
       
-      // Use web search with Google as fallback since Firecrawl search might not be available
       const searchQuery = `${query} contact information email phone website`;
       
-      // Try to scrape Google search results as an alternative
-      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      
-      // Instead of using search (which might not be available), let's try scraping the entity's main website
-      // First, try to find the official website by searching for the entity name + official website
-      const websiteQuery = `${query} official website`;
-      
-      // For now, let's return a mock result and try direct scraping
-      // This is a simplified approach - in production you'd want a proper search API
       return {
         success: true,
         data: [{
@@ -71,9 +60,10 @@ export class FirecrawlService {
       console.log(`Scraping URL: ${url}`);
       
       const scrapeResponse = await this.app.scrapeUrl(url, {
-        formats: ['markdown'],
+        formats: ['markdown', 'html'],
         onlyMainContent: true,
-        timeout: 30000
+        timeout: 45000,
+        waitFor: 3000
       });
 
       console.log('Scrape response:', scrapeResponse);
@@ -86,25 +76,23 @@ export class FirecrawlService {
         };
       }
 
-      // Handle the response structure correctly
       let content = '';
       let metadata = {};
 
-      // The response structure should have markdown and metadata properties directly
       if (scrapeResponse.markdown) {
         content = scrapeResponse.markdown;
-      } else if ((scrapeResponse as any).content) {
-        content = (scrapeResponse as any).content;
+      } else if (scrapeResponse.html) {
+        content = scrapeResponse.html;
       }
 
       if (scrapeResponse.metadata) {
         metadata = scrapeResponse.metadata;
       }
 
-      if (!content) {
+      if (!content || content.trim().length < 100) {
         return {
           success: false,
-          error: 'No content extracted from the page'
+          error: 'Insufficient content extracted from the page'
         };
       }
 
@@ -129,26 +117,30 @@ export class FirecrawlService {
     try {
       console.log(`Finding website for entity: ${entityName}`);
       
-      // Try to construct likely URLs for the entity
+      const cleanEntityName = entityName.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '');
+      
       const possibleUrls = [
-        `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.com`,
-        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.com`,
-        `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.org`,
-        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.org`,
-        `https://www.${entityName.toLowerCase().replace(/\s+/g, '')}.net`,
-        `https://${entityName.toLowerCase().replace(/\s+/g, '')}.net`
+        `https://www.${cleanEntityName}.com`,
+        `https://${cleanEntityName}.com`,
+        `https://www.${cleanEntityName}.org`,
+        `https://${cleanEntityName}.org`,
+        `https://www.${cleanEntityName}.net`,
+        `https://${cleanEntityName}.net`,
+        `https://www.${cleanEntityName}.in`,
+        `https://${cleanEntityName}.in`,
+        `https://www.${cleanEntityName}.co`,
+        `https://${cleanEntityName}.co`
       ];
 
-      // Try each possible URL with a simple fetch to see if it exists
       for (const url of possibleUrls) {
         try {
           console.log(`Testing URL: ${url}`);
           
-          // Create AbortController for timeout
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
           
-          // Use a simple fetch to test if the URL is accessible
           const response = await fetch(url, { 
             method: 'HEAD', 
             mode: 'no-cors',
@@ -177,7 +169,6 @@ export class FirecrawlService {
     try {
       console.log(`Searching and scraping for entity: ${entityName}`);
       
-      // First try to find the entity's website
       const websiteUrl = await this.findEntityWebsite(entityName);
       
       if (websiteUrl) {
@@ -189,7 +180,26 @@ export class FirecrawlService {
         }
       }
 
-      // If direct website approach doesn't work, return an error
+      const alternativeUrls = [
+        `https://www.crunchbase.com/organization/${entityName.toLowerCase().replace(/\s+/g, '-')}`,
+        `https://www.linkedin.com/company/${entityName.toLowerCase().replace(/\s+/g, '-')}`,
+        `https://en.wikipedia.org/wiki/${entityName.replace(/\s+/g, '_')}`
+      ];
+
+      for (const altUrl of alternativeUrls) {
+        try {
+          console.log(`Trying alternative source: ${altUrl}`);
+          const result = await this.scrape(altUrl);
+          if (result.success && result.data?.content) {
+            console.log(`Successfully scraped alternative source for ${entityName}`);
+            return result;
+          }
+        } catch (error) {
+          console.log(`Alternative source failed: ${altUrl}`);
+          continue;
+        }
+      }
+
       return {
         success: false,
         error: `Could not find or scrape website for ${entityName}`
@@ -212,7 +222,6 @@ export class FirecrawlService {
         const result = await this.scrape(url);
         results.push({ ...result, url });
         
-        // Add delay between requests to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
         
       } catch (error) {

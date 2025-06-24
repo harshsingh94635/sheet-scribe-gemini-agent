@@ -1,4 +1,3 @@
-
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SpreadsheetRow } from '@/pages/Index';
 
@@ -21,32 +20,40 @@ export class GeminiService {
       console.log(`Extracting contact info for ${entityName} from ${webContent.length} characters of content`);
       
       const prompt = `
-You are a data extraction AI. Extract contact information for "${entityName}" from the following web content.
+You are an expert data extraction AI specializing in finding contact information for businesses and organizations.
 
-Web Content:
-${webContent.substring(0, 10000)}
+Extract contact information for "${entityName}" from the following web content:
 
-Extract the following information and return it as a JSON object:
+${webContent.substring(0, 15000)}
+
+Return ONLY a valid JSON object with the following structure:
 {
-  "contact": "main contact phone number",
-  "phone": "primary phone number", 
-  "email": "official email address",
-  "website": "official website URL",
-  "location": "city, country or full address",
-  "linkedin": "LinkedIn profile URL",
-  "address": "physical address if available"
+  "contact": "main contact phone number with country code",
+  "phone": "primary phone number with country code", 
+  "email": "official email address (prefer contact@, info@, hello@, or general inquiry emails)",
+  "website": "official website URL (must include https://)",
+  "location": "city, state/province, country",
+  "linkedin": "LinkedIn company profile URL (must be company page, not personal)",
+  "address": "complete physical address if available",
+  "twitter": "Twitter/X handle or URL if found",
+  "facebook": "Facebook page URL if found"
 }
 
-IMPORTANT RULES:
-1. Only extract information that is clearly associated with "${entityName}"
-2. For phone numbers, look for main/general contact numbers, support numbers, or office numbers
-3. For emails, prefer info@, contact@, hello@, or general inquiry emails
-4. For website, use the main domain URL
-5. For location, provide city and country at minimum
-6. If information is not clearly found, use empty string ""
-7. Ensure all URLs are complete and valid (include https://)
-8. Format phone numbers in international format if possible
-9. Return ONLY the JSON object, no additional text or explanation
+CRITICAL EXTRACTION RULES:
+1. Phone numbers: Look for main office, customer service, or general contact numbers. Include country code if available.
+2. Email addresses: Prioritize general contact emails like info@, contact@, hello@, support@, admin@ over personal emails
+3. Website: Use the main official domain URL, ensure it starts with https://
+4. Location: Extract city, state/country. Look for "headquarters", "office location", "based in"
+5. LinkedIn: Only extract official company LinkedIn pages (linkedin.com/company/), not personal profiles
+6. Address: Look for complete mailing addresses, office addresses, or headquarters locations
+7. Social media: Extract official business accounts only
+
+IMPORTANT:
+- If information is not clearly found or doesn't belong to "${entityName}", use empty string ""
+- All URLs must be complete and valid (include https://)
+- Phone numbers should include country code when possible (+1 for US, +91 for India, etc.)
+- Ensure extracted data specifically relates to "${entityName}" and not other companies mentioned
+- Return ONLY the JSON object, no additional text, explanations, or formatting
 
 JSON:`;
 
@@ -62,12 +69,35 @@ JSON:`;
         if (jsonMatch) {
           const extractedData = JSON.parse(jsonMatch[0]);
           
-          // Clean and validate the data
+          // Clean and validate the data more thoroughly
           const cleanedData: Partial<SpreadsheetRow> = {};
           
           Object.entries(extractedData).forEach(([key, value]) => {
-            if (typeof value === 'string' && value.trim() !== '' && value.toLowerCase() !== 'not found') {
-              cleanedData[key] = value.trim();
+            if (typeof value === 'string' && value.trim() !== '' && 
+                value.toLowerCase() !== 'not found' && 
+                value.toLowerCase() !== 'n/a' &&
+                value.toLowerCase() !== 'not available' &&
+                value !== '""' &&
+                value !== "''" &&
+                !value.toLowerCase().includes('not specified')) {
+              
+              let cleanedValue = value.trim();
+              
+              // Specific cleaning for different field types
+              if (key === 'website' && !cleanedValue.startsWith('http')) {
+                cleanedValue = 'https://' + cleanedValue;
+              }
+              
+              if (key === 'email' && !cleanedValue.includes('@')) {
+                return; // Skip invalid emails
+              }
+              
+              if ((key === 'linkedin' || key === 'twitter' || key === 'facebook') && 
+                  !cleanedValue.startsWith('http')) {
+                return; // Skip invalid social media URLs
+              }
+              
+              cleanedData[key] = cleanedValue;
             }
           });
           
@@ -78,6 +108,7 @@ JSON:`;
         }
       } catch (parseError) {
         console.error(`Failed to parse Gemini JSON response for ${entityName}:`, parseError);
+        console.log('Raw response:', text);
       }
       
       return {};
@@ -112,7 +143,7 @@ Return a JSON object with:
 {
   "nameColumn": "column name that contains entity names",
   "existingColumns": ["list", "of", "existing", "columns"],
-  "suggestedColumns": ["contact", "email", "website", "location", "linkedin"]
+  "suggestedColumns": ["contact", "phone", "email", "website", "location", "linkedin", "address", "twitter", "facebook"]
 }
 
 JSON:`;
@@ -134,13 +165,14 @@ JSON:`;
       const nameColumn = columns.find(col => 
         col.toLowerCase().includes('name') || 
         col.toLowerCase().includes('company') ||
-        col.toLowerCase().includes('organization')
+        col.toLowerCase().includes('organization') ||
+        col.toLowerCase().includes('incubator')
       ) || columns[0];
       
       return {
         nameColumn,
         existingColumns: columns,
-        suggestedColumns: ['contact', 'email', 'website', 'location', 'linkedin']
+        suggestedColumns: ['contact', 'phone', 'email', 'website', 'location', 'linkedin', 'address', 'twitter', 'facebook']
       };
       
     } catch (error) {
