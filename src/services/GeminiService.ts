@@ -6,12 +6,12 @@ export class GeminiService {
   private model: any;
 
   constructor() {
-    const apiKey = localStorage.getItem('gemini_api_key');
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error('Gemini API key not found');
     }
     
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 

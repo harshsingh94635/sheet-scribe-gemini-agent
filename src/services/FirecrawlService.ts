@@ -23,12 +23,15 @@ export class FirecrawlService {
   private app: FirecrawlApp;
 
   constructor() {
-    const apiKey = localStorage.getItem('firecrawl_api_key');
+    const apiKey = import.meta.env.VITE_FIRECRAWL_API_KEY;
     if (!apiKey) {
       throw new Error('Firecrawl API key not found');
     }
     
-    this.app = new FirecrawlApp({ apiKey });
+    this.app = new FirecrawlApp({
+      apiKey: import.meta.env.VITE_FIRECRAWL_API_KEY
+    });
+
   }
 
   async search(query: string, limit: number = 5): Promise<SearchResult> {

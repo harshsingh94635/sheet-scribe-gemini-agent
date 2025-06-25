@@ -5,18 +5,27 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-  },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  server: {
+    host: "localhost",
+    port: 5173,
+    open: true,
+  },
+  build: {
+    outDir: "dist",
+  },
+  // SPA fallback: redirect all unknown routes to index.html
+  // This is needed for BrowserRouter to work properly
+  preview: {
+    port: 4173,
+    open: true,
   },
 }));
